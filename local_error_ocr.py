@@ -112,7 +112,105 @@ def extract_error_message(image):
         detail=1,
         paragraph=False
     )
+#-----ISSUE CLASSIFICATION-------------
+   ISSUE KEYWORD = {
+       "Login Issue":{
+           "login":3,
+           "log in":3,
+           "sign in":3,
+           "signin":3,
+           "authentication":3,
+           "invalid credentials":5,
+           "Incorrect password":5,
+           "wrong passoword":5,
+           "password mismatch":4,
+           "unauthorized":3,
+           "session expired":3,
+           "login failed":5,
+           "invalid username":4,
+           "invalid user":2,
+       },
+       "Registration Issue":{
+           "register":3,
+           "registration":4,
+           "singup":3,
+           "sing up":3,
+           "create account":4,
+           "already exists":3,
+           "user already exists":5,
+           "duplicate user":5,
+           "registration failed":5,
+           "otp":2,
+           "verification code":3,
+           "email already exists":5,
+           "mobile already registered":5,
+       },
+       "MPIN Issue":{
+           "mpin":5,
+           "m-pin":5,
+           "m pin":5,
+           "Incorrect pin":4,
+           "invalid pin":4,
+           "wrong pin":4,
+           "pin verification":4,
+           "pin mismatch":4,
+           "reset pin":4,
+           "set pin":3,
+           "forgot pin":4,
+           "mpin failed":5,
+           "mpin verification":5,
+           "transaction pin":2,
+       },
+   }
+    def classify_Issue(error_text, all_ocr_text=""):
+        combined_text = f"{all_ocr_text}\n{error_text}".lower()
+        scores = {
+            category=0
+            for category in ISSUE_KEYWORDS
+}
+   matched_keywords={
+                category:[]
+                for category in ISSUE_KEYWORDS
+            }
+   for category, keywords in ISSUE_KEYWORDS.items():
+       for keyword, weight in keyword.items():
+           if keyword in combined_text:
+               scores[category] += weight
+               matched_keywords[category].append(keyword)
 
+ranked = sorted(
+    scores.items(),
+    key=lambda item:item[1],
+    reverse:True
+    }
+    best_category, best_score=ranked[0]
+    second_score = ranked[1][1]
+#Avoid guessing when there is too little evidence
+#or two categories have similar evidence.
+if best_score < 3 or best_score == second_score:
+    return{
+        "Issue_category":"Unknown",
+        "confidence":"Low",
+        "matched_keywords:"[],
+        "scores":scores,
+        "message":{
+            "Unable to confidently classify this issue."
+            "Review the screenshot or add relevent keywords:"
+        },
+    }
+if best_score >=6 and best_score >= second_score + 3:
+    confidence = "High"
+else:
+confidence = "Medium"
+return{
+    "Issue_category": best_category,
+     "Confidence": confidence,
+    "matched keywords": matched_keywords[best_category],
+    "scores":scores,
+    "message":f"Detected a possible(best_category).",
+}
+        
+    
     # Sort approximately from top to bottom, left to right.
     detected_lines = []
 
