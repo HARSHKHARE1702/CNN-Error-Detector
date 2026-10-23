@@ -1,4 +1,3 @@
-
 import re
 from pathlib import Path
 
@@ -14,9 +13,10 @@ MODEL_PATH = "error_cnn.keras"
 IMAGE_SIZE = (128, 128)
 ERROR_THRESHOLD = 0.50
 
-# Your model was trained with:
+# Model labels:
 # Error = 0
 # Normal = 1
+# Sigmoid output = probability of Normal
 
 
 # ---------------- LOAD MODELS ----------------
@@ -39,9 +39,8 @@ def detect_error(image_path):
     image_array = np.array(resized, dtype=np.float32) / 255.0
     image_array = np.expand_dims(image_array, axis=0)
 
-    # Model output is probability of Normal (class 1).
     probability_normal = float(
-        cnn_model.predict(image_array, verbose=0)[0][0]
+        cnn_model.predict(image_array, verbose=0).reshape(-1)[0]
     )
 
     probability_error = 1.0 - probability_normal
@@ -55,7 +54,7 @@ def detect_error(image_path):
     return image, prediction, probability_error
 
 
-# ---------------- OCR TEXT EXTRACTION ----------------
+# ---------------- ERROR TEXT PATTERNS ----------------
 
 ERROR_PATTERNS = [
     r"\btraceback\b",
@@ -103,118 +102,20 @@ def looks_like_stack_trace(text):
     )
 
 
+# ---------------- OCR EXTRACTION ----------------
+
 def extract_error_message(image):
     image_array = np.array(image.convert("RGB"))
 
-    # Read text regions from the screenshot.
     results = ocr_reader.readtext(
         image_array,
         detail=1,
         paragraph=False
     )
-#-----ISSUE CLASSIFICATION-------------
-   ISSUE KEYWORD = {
-       "Login Issue":{
-           "login":3,
-           "log in":3,
-           "sign in":3,
-           "signin":3,
-           "authentication":3,
-           "invalid credentials":5,
-           "Incorrect password":5,
-           "wrong passoword":5,
-           "password mismatch":4,
-           "unauthorized":3,
-           "session expired":3,
-           "login failed":5,
-           "invalid username":4,
-           "invalid user":2,
-       },
-       "Registration Issue":{
-           "register":3,
-           "registration":4,
-           "singup":3,
-           "sing up":3,
-           "create account":4,
-           "already exists":3,
-           "user already exists":5,
-           "duplicate user":5,
-           "registration failed":5,
-           "otp":2,
-           "verification code":3,
-           "email already exists":5,
-           "mobile already registered":5,
-       },
-       "MPIN Issue":{
-           "mpin":5,
-           "m-pin":5,
-           "m pin":5,
-           "Incorrect pin":4,
-           "invalid pin":4,
-           "wrong pin":4,
-           "pin verification":4,
-           "pin mismatch":4,
-           "reset pin":4,
-           "set pin":3,
-           "forgot pin":4,
-           "mpin failed":5,
-           "mpin verification":5,
-           "transaction pin":2,
-       },
-   }
-    def classify_Issue(error_text, all_ocr_text=""):
-        combined_text = f"{all_ocr_text}\n{error_text}".lower()
-        scores = {
-            category=0
-            for category in ISSUE_KEYWORDS
-}
-   matched_keywords={
-                category:[]
-                for category in ISSUE_KEYWORDS
-            }
-   for category, keywords in ISSUE_KEYWORDS.items():
-       for keyword, weight in keyword.items():
-           if keyword in combined_text:
-               scores[category] += weight
-               matched_keywords[category].append(keyword)
 
-ranked = sorted(
-    scores.items(),
-    key=lambda item:item[1],
-    reverse:True
-    }
-    best_category, best_score=ranked[0]
-    second_score = ranked[1][1]
-#Avoid guessing when there is too little evidence
-#or two categories have similar evidence.
-if best_score < 3 or best_score == second_score:
-    return{
-        "Issue_category":"Unknown",
-        "confidence":"Low",
-        "matched_keywords:"[],
-        "scores":scores,
-        "message":{
-            "Unable to confidently classify this issue."
-            "Review the screenshot or add relevent keywords:"
-        },
-    }
-if best_score >=6 and best_score >= second_score + 3:
-    confidence = "High"
-else:
-confidence = "Medium"
-return{
-    "Issue_category": best_category,
-     "Confidence": confidence,
-    "matched keywords": matched_keywords[best_category],
-    "scores":scores,
-    "message":f"Detected a possible(best_category).",
-}
-        
-    
-    # Sort approximately from top to bottom, left to right.
     detected_lines = []
 
-    for bbox, text, confidence in results:
+    for bbox, text, ocr_confidence in results:
         text = text.strip()
 
         if not text:
@@ -225,36 +126,33 @@ return{
 
         detected_lines.append((top, left, text))
 
+    # Approximate reading order.
     detected_lines.sort(key=lambda item: (item[0], item[1]))
     lines = [item[2] for item in detected_lines]
 
     if not lines:
         return "", lines
 
-    # Identify error messages and stack-trace lines.
     selected = set()
 
+    # Find error messages and stack-trace lines.
     for index, line in enumerate(lines):
-        if looks_like_error(line):
+        if looks_like_error(line) or looks_like_stack_trace(line):
             selected.add(index)
 
-            # Include nearby context for wrapped messages.
+            # Keep nearby lines for additional context.
             for nearby in range(
                 max(0, index - 1),
                 min(len(lines), index + 2)
             ):
                 selected.add(nearby)
 
-        if looks_like_stack_trace(line):
-            selected.add(index)
-
-    # Preserve lines after a Python traceback header.
+    # Include a Python traceback through its final exception.
     for index, line in enumerate(lines):
         if re.search(r"\bTraceback\b", line, re.IGNORECASE):
             for following in range(index, len(lines)):
                 selected.add(following)
 
-                # Stop after the likely final exception line.
                 if (
                     following > index
                     and looks_like_error(lines[following])
@@ -262,10 +160,9 @@ return{
                 ):
                     break
 
-    # Keep selected lines in original reading order.
     extracted_lines = [lines[i] for i in sorted(selected)]
 
-    # Remove duplicate OCR results.
+    # Remove duplicate OCR lines.
     unique_lines = []
     seen = set()
 
@@ -277,6 +174,110 @@ return{
             unique_lines.append(line)
 
     return "\n".join(unique_lines).strip(), lines
+
+
+# ---------------- ISSUE CLASSIFICATION ----------------
+
+ISSUE_KEYWORDS = {
+    "Login Issue": {
+        "login": 3,
+        "log in": 3,
+        "sign in": 3,
+        "signin": 3,
+        "authentication": 3,
+        "invalid credentials": 5,
+        "incorrect password": 5,
+        "wrong password": 5,
+        "password mismatch": 4,
+        "unauthorized": 3,
+        "session expired": 3,
+        "login failed": 5,
+        "invalid username": 4,
+        "invalid user": 2,
+    },
+    "Registration Issue": {
+        "register": 3,
+        "registration": 4,
+        "signup": 3,
+        "sign up": 3,
+        "create account": 4,
+        "already exists": 3,
+        "user already exists": 5,
+        "duplicate user": 5,
+        "registration failed": 5,
+        "otp": 2,
+        "verification code": 3,
+        "email already exists": 5,
+        "mobile number already registered": 5,
+    },
+    "MPIN Issue": {
+        "mpin": 5,
+        "m-pin": 5,
+        "m pin": 5,
+        "incorrect pin": 4,
+        "invalid pin": 4,
+        "wrong pin": 4,
+        "pin verification": 4,
+        "pin validation": 4,
+        "pin mismatch": 4,
+        "reset pin": 4,
+        "set pin": 3,
+        "forgot pin": 4,
+        "mpin failed": 5,
+        "mpin verification": 5,
+        "transaction pin": 2,
+    },
+}
+
+
+def classify_issue(error_text, all_ocr_text=""):
+    combined_text = f"{all_ocr_text}\n{error_text}".lower()
+
+    scores = {
+        category: 0 for category in ISSUE_KEYWORDS
+    }
+
+    matched_keywords = {
+        category: [] for category in ISSUE_KEYWORDS
+    }
+
+    for category, keywords in ISSUE_KEYWORDS.items():
+        for keyword, weight in keywords.items():
+            if keyword in combined_text:
+                scores[category] += weight
+                matched_keywords[category].append(keyword)
+
+    ranked = sorted(
+        scores.items(),
+        key=lambda item: item[1],
+        reverse=True
+    )
+
+    best_category, best_score = ranked[0]
+    second_score = ranked[1][1]
+
+    # Do not guess when evidence is insufficient or tied.
+    if best_score < 3 or best_score == second_score:
+        return {
+            "issue_category": "Unknown",
+            "confidence": "Low",
+            "matched_keywords": [],
+            "scores": scores,
+            "message": "Unable to confidently classify the issue."
+        }
+
+    if best_score >= 6 and best_score >= second_score + 3:
+        confidence = "High"
+    else:
+        confidence = "Medium"
+
+    return {
+        "issue_category": best_category,
+        "confidence": confidence,
+        "matched_keywords": matched_keywords[best_category],
+        "scores": scores,
+        "message": f"Possible {best_category} detected."
+    }
 
 
 # ---------------- MAIN PROGRAM ----------------
@@ -296,31 +297,41 @@ def main():
         )
 
         print("\n========== CNN RESULT ==========")
-        print(f"Prediction: {prediction}")
+        print("Prediction:", prediction)
         print(f"Error probability: {error_probability:.2%}")
 
-        if prediction == "Error":
-            print("\n========== OCR RESULT ==========")
+        if prediction == "Normal":
+            print("\nNo OCR extraction performed.")
+            return
 
-            error_text, all_text = extract_error_message(image)
+        # OCR runs only when CNN predicts Error.
+        error_text, all_text = extract_error_message(image)
 
-            if error_text:
-                print("Extracted error message / stack trace:\n")
-                print(error_text)
-            else:
-                print(
-                    "CNN detected an error, but no recognizable "
-                    "error message or stack trace was found."
-                )
+        print("\n========== EXTRACTED ERROR ==========")
 
-                print("\nAll OCR text for debugging:")
-                print("\n".join(all_text))
-
+        if error_text:
+            print(error_text)
         else:
-            print(
-                "\nNo OCR extraction performed because the CNN "
-                "classified this screenshot as Normal."
-            )
+            print("No recognizable error message found.")
+
+        # Classify using the extracted error and all OCR text.
+        print("\n========== ISSUE CLASSIFICATION ==========")
+
+        result = classify_issue(
+            error_text=error_text,
+            all_ocr_text="\n".join(all_text)
+        )
+
+        print("Category:", result["issue_category"])
+        print("Confidence:", result["confidence"])
+        print("Matched keywords:", result["matched_keywords"])
+        print("Scores:", result["scores"])
+        print("Details:", result["message"])
+
+        # Helpful when OCR filtering misses relevant text.
+        if not error_text and all_text:
+            print("\nAll OCR text for debugging:")
+            print("\n".join(all_text))
 
     except Exception as exc:
         print(f"\nProcessing failed: {exc}")
@@ -328,3 +339,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
