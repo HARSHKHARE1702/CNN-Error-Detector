@@ -1,0 +1,15 @@
+# MAJOR FUNCTIONALITY ADDED IN EXISTING API file
+from pydantic import BASEMODEL,Field
+from typing import Literal 
+
+Class SupportActionRequest(BaseModel):
+action_id:Literal[
+  "Login_help",
+  "registration_help",
+  "mpin_help",
+  ]
+SUPPORT_GUIDES={
+  "Login_help":{
+  "category":"Login",
+    "title":"Login_Troubleshooting",
+    "Steps":[
