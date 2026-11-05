@@ -13,3 +13,41 @@ SUPPORT_GUIDES={
   "category":"Login",
     "title":"Login_Troubleshooting",
     "Steps":[
+      "Request you to please re-try, Its working now, make sure you complete the SIM binding while login/Registration" 
+"It seems like one encrypted Message will be composed by default and give the option to send" 
+"Until you not complete the sim binding you will not be allowed to use the App as its a security concern"
+make sure you are selecting the right SIM while send the SMS"]
+"next_action": "Try logging in again after checking these steps"
+
+"registration_help":{
+"category":"Registration",
+"title":"Registration_Troubleshooting",
+"Steps":[ "For Registration Process:[For New User] Step1: select "Register" Step2: "Enter your CIF OR ACCOUNT Number and Enter your Registered Mobile Number"
+step3: "Verify the OTP & Authenticate" step4: "SIM Binding Validation & Authenticated" step5: "Set Your Preferred USER ID,mpin and security Questions[Not Mandatory]"]
+
+"mpin_help":{
+"category":"MPIN",
+"title":"MPIN Troubleshooting",
+"Steps":["Request you to please go through the steps below: How do I reset my MPIN? Go to "Trouble Logging IN">"Forgot MPIN,""enter details,authenticate,and confirm new MPIN"
+
+@app.post("/support-action")
+def support_action(request:SupportActionRequest):
+guide = SUPPORT_GUIDES.get(request.action_id)
+
+#Defensive check in case the guide is not configured
+if guide is None:
+    raise HTTPException(
+     status_code = 404,
+    detail = "Troubleshooting guide not found"
+),
+return {
+"Success":True,
+"action_id":request.action_id,
+"category":guide["category"],
+"Title":guide["Title"],
+"Steps":guide["steps"],
+"Next-guide":guide["next_action"],
+"Security_notice":(
+"Never share your password, MPIN,OTP, or full banking credentials"
+)
+}
